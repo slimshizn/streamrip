@@ -117,7 +117,8 @@ class QobuzSpoofer:
             ).decode("utf-8")
 
         vals: List[str] = list(secrets.values())
-        vals.remove("")
+        if "" in vals:
+            vals.remove("")
 
         secrets_list = vals
 
@@ -162,20 +163,19 @@ class QobuzClient(Client):
             f.qobuz.secrets = c.secrets
             f.set_modified()
 
-        self.session.headers.update({"X-App-Id": c.app_id})
-        self.secret = await self._get_valid_secret(c.secrets)
-
+        self.session.headers.update({"X-App-Id": str(c.app_id)})
+        
         if c.use_auth_token:
             params = {
                 "user_id": c.email_or_userid,
                 "user_auth_token": c.password_or_token,
-                "app_id": c.app_id,
+                "app_id": str(c.app_id),
             }
         else:
             params = {
                 "email": c.email_or_userid,
                 "password": c.password_or_token,
-                "app_id": c.app_id,
+                "app_id": str(c.app_id),
             }
 
         logger.debug("Request params %s", params)
@@ -195,6 +195,8 @@ class QobuzClient(Client):
         uat = resp["user_auth_token"]
         self.session.headers.update({"X-User-Auth-Token": uat})
 
+        self.secret = await self._get_valid_secret(c.secrets)
+
         self.logged_in = True
 
     async def get_metadata(self, item: str, media_type: str):
@@ -203,7 +205,7 @@ class QobuzClient(Client):
 
         c = self.config.session.qobuz
         params = {
-            "app_id": c.app_id,
+            "app_id": str(c.app_id),
             f"{media_type}_id": item,
             # Do these matter?
             "limit": 500,
@@ -236,7 +238,7 @@ class QobuzClient(Client):
         c = self.config.session.qobuz
         page_limit = 500
         params = {
-            "app_id": c.app_id,
+            "app_id": str(c.app_id),
             "label_id": label_id,
             "limit": page_limit,
             "offset": 0,
@@ -254,7 +256,7 @@ class QobuzClient(Client):
             self._api_request(
                 epoint,
                 {
-                    "app_id": c.app_id,
+                    "app_id": str(c.app_id),
                     "label_id": label_id,
                     "limit": page_limit,
                     "offset": offset,
@@ -380,25 +382,24 @@ class QobuzClient(Client):
         async with QobuzSpoofer() as spoofer:
             return await spoofer.get_app_id_and_secrets()
 
-    async def _get_valid_secret(self, secrets: list[str]) -> str:
-        results = await asyncio.gather(
-            *[self._test_secret(secret) for secret in secrets],
-        )
-        working_secrets = [r for r in results if r is not None]
-
-        if len(working_secrets) == 0:
-            raise InvalidAppSecretError(secrets)
-
-        return working_secrets[0]
-
     async def _test_secret(self, secret: str) -> Optional[str]:
         status, _ = await self._request_file_url("19512574", 4, secret)
         if status == 400:
             return None
-        if status == 200:
+        if status == 200 or status == 401:
             return secret
         logger.warning("Got status %d when testing secret", status)
         return None
+
+    async def _get_valid_secret(self, secrets: list[str]) -> str:
+        results = await asyncio.gather(
+                *[self._test_secret(secret) for secret in secrets],
+                )
+        working_secrets = [r for r in results if r is not None]
+        if len(working_secrets) == 0:
+            raise InvalidAppSecretError(secrets)
+
+        return working_secrets[0]
 
     async def _request_file_url(
         self,

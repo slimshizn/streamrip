@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from ..filepath_utils import clean_filename
+from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
 from .util import get_quality_id, safe_get, typed
 
@@ -77,8 +77,8 @@ class AlbumMetadata:
             "year": self.year,
             "container": self.info.container,
         }
-
-        return formatter.format(**info)
+        
+        return clean_filepath(formatter.format(**info))
 
     @classmethod
     def from_qobuz(cls, resp: dict) -> AlbumMetadata:
@@ -101,7 +101,7 @@ class AlbumMetadata:
         if isinstance(_label, dict):
             _label = _label["name"]
         label = typed(_label or "", str)
-        description = typed(resp.get("description", "") or None, str)
+        description = typed(resp.get("description", ""), str)
         disctotal = typed(
             max(
                 track.get("media_number", 1)
